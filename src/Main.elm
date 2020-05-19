@@ -316,11 +316,7 @@ view model =
         case model of
             ChoosingTopic context ->
                 El.row [ El.width (El.fill |> El.maximum 640), El.centerY, El.centerX ]
-                    [ Input.spellChecked
-                        [ El.spacing 12
-                        , Input.focusedOnLoad
-                        , onEnter StartDialogue
-                        ]
+                    [ Input.spellChecked [ El.spacing 12, Input.focusedOnLoad, onEnter StartDialogue ]
                         { onChange = EditTopic
                         , text = context.topic
                         , placeholder = Just (Input.placeholder [] (El.text "What the dialogue is about today?"))
