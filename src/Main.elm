@@ -5,8 +5,9 @@ import Browser.Dom as Dom
 import Browser.Events
 import Element as El
 import Element.Background as Background
+import Element.Border as Border
 import Element.Font as Font
-import Element.Input
+import Element.Input as Input
 import Element.Lazy
 import Html as H
 import Html.Attributes as Attr
@@ -150,7 +151,7 @@ type Model
 
 init : ( Model, Cmd Msg )
 init =
-    ( ChoosingTopic { topic = "" }, focusOnElementWithId "input-dialogue-topic" )
+    ( ChoosingTopic { topic = "" }, Cmd.none )
 
 
 
@@ -158,8 +159,7 @@ init =
 
 
 type Msg
-    = Focus (Result Dom.Error ())
-    | KeyPressed Key
+    = KeyPressed Key
     | EditTopic String
     | StartDialogue
     | EditStatement String
@@ -206,13 +206,6 @@ update msg model =
         --
         -- Auxiliary events
         --
-        ( Focus (Err e), _ ) ->
-            let
-                _ =
-                    Debug.log "Couldn't find the element id" e
-            in
-            ( model, Cmd.none )
-
         ( _, _ ) ->
             ( model, Cmd.none )
 
@@ -224,7 +217,7 @@ handleKeyboardEventsWhenBrowsing focus key =
             ( BrowsingDialogue { focus = navigateDialogue focus navigation }, Cmd.none )
 
         newNodeEditor nodeType =
-            ( Editing { focus = focus, statement = "", nodeType = nodeType }, focusOnElementWithId "input-statement" )
+            ( Editing { focus = focus, statement = "", nodeType = nodeType }, Cmd.none )
     in
     case key of
         Enter ->
@@ -247,11 +240,6 @@ handleKeyboardEventsWhenBrowsing focus key =
 
         _ ->
             Nothing
-
-
-focusOnElementWithId : String -> Cmd Msg
-focusOnElementWithId elementId =
-    Task.attempt Focus (Dom.focus elementId)
 
 
 keyDecoder : Decode.Decoder Msg
@@ -293,58 +281,80 @@ toKey keyValue =
 
 view : Model -> H.Html Msg
 view model =
-    case model of
-        ChoosingTopic context ->
-            H.div []
-                [ H.form [ Evt.onSubmit StartDialogue ]
-                    [ H.input
-                        [ Attr.id "input-dialogue-topic"
-                        , Attr.placeholder "What is the topic of this conversation?"
-                        , Attr.value context.topic
-                        , Evt.onInput EditTopic
-                        ]
-                        []
+    let
+        layout =
+            El.layout
+                [ Border.rounded 1
+                , El.padding 30
+                , Font.color (El.rgba 0 0 0 1)
+                , Font.size 32
+                , Font.family
+                    [ Font.external
+                        { url = "https://fonts.googleapis.com/css?family=EB+Garamond"
+                        , name = "EB Garamond"
+                        }
+                    , Font.sansSerif
                     ]
                 ]
 
-        Editing context ->
-            H.div []
-                [ H.div [] [ renderDialogue context.focus ]
-                , H.div []
-                    [ H.form [ Evt.onSubmit ProcessStatement ]
-                        [ H.input
-                            [ Attr.id "input-statement"
-                            , Attr.placeholder "Enter a statement..."
-                            , Attr.value context.statement
-                            , Evt.onInput EditStatement
-                            ]
-                            []
+        onEnter msg =
+            El.htmlAttribute
+                (Evt.on "keyup"
+                    (Decode.field "key" Decode.string
+                        |> Decode.andThen
+                            (\key ->
+                                if key == "Enter" then
+                                    Decode.succeed msg
+
+                                else
+                                    Decode.fail "Not the enter key"
+                            )
+                    )
+                )
+    in
+    layout <|
+        case model of
+            ChoosingTopic context ->
+                El.row [ El.width (El.fill |> El.maximum 640), El.centerY, El.centerX ]
+                    [ Input.spellChecked
+                        [ El.spacing 12
+                        , Input.focusedOnLoad
+                        , onEnter StartDialogue
                         ]
+                        { onChange = EditTopic
+                        , text = context.topic
+                        , placeholder = Just (Input.placeholder [] (El.text "What the dialogue is about today?"))
+                        , label = Input.labelHidden "Topic"
+                        }
                     ]
-                ]
 
-        BrowsingDialogue context ->
-            --H.div []
-            --                [ renderDialogue context.focus ]
-            blabla
+            Editing context ->
+                {- H.div []
+                   [ H.div [] [ renderDialogue context.focus ]
+                   , H.div []
+                       [ H.form [ Evt.onSubmit ProcessStatement ]
+                           [ H.input
+                               [ Attr.id "input-statement"
+                               , Attr.placeholder "Enter a statement..."
+                               , Attr.value context.statement
+                               , Evt.onInput EditStatement
+                               ]
+                               []
+                           ]
+                       ]
+                       ]
+                -}
+                El.none
+
+            BrowsingDialogue context ->
+                dialogueBrowser context.focus
 
 
-blabla =
-    El.layout
-        [ Font.color (rgba 0 0 0 1)
-        , Font.size 32
-        , Font.family
-            [ Font.external
-                { url = "https://fonts.googleapis.com/css?family=EB+Garamond"
-                , name = "EB Garamond"
-                }
-            , Font.sansSerif
-            ]
-        ]
-    <|
-        El.column
-            [ El.spacing 20, El.padding 10 ]
-            []
+dialogueBrowser : DialogueFocus -> El.Element msg
+dialogueBrowser dialogueFocus =
+    El.column
+        [ El.spacing 20, El.padding 10 ]
+        []
 
 
 annotationToHtml : DialogueNodeAnnotation -> H.Html msg
