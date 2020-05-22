@@ -161,9 +161,7 @@ init =
 type Msg
     = KeyPressed Key
     | EditTopic String
-    | StartDialogue
     | EditStatement String
-    | ProcessStatement
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -175,33 +173,43 @@ update msg model =
         ( EditTopic newTopic, ChoosingTopic context ) ->
             ( ChoosingTopic { context | topic = newTopic }, Cmd.none )
 
-        ( StartDialogue, ChoosingTopic context ) ->
-            ( BrowsingDialogue { focus = startDialogue context.topic }, Cmd.none )
-
         --
         -- Statement editor
         --
         ( EditStatement newStatement, Editing context ) ->
             ( Editing { context | statement = newStatement }, Cmd.none )
 
-        ( ProcessStatement, Editing context ) ->
-            if String.isEmpty context.statement then
-                ( BrowsingDialogue { focus = context.focus }, Cmd.none )
-
-            else
-                case applyStatement context.focus context.statement of
-                    Ok newFocus ->
-                        ( BrowsingDialogue { focus = newFocus }, Cmd.none )
-
-                    Err error ->
-                        -- TODO expose errors
-                        ( model, Cmd.none )
-
         --
         -- Keyboard navigation
         --
         ( KeyPressed key, BrowsingDialogue context ) ->
             handleKeyboardEventsWhenBrowsing context.focus key |> Maybe.withDefault ( model, Cmd.none )
+
+        ( KeyPressed key, ChoosingTopic context ) ->
+            case key of
+                Enter ->
+                    ( BrowsingDialogue { focus = startDialogue context.topic }, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        ( KeyPressed key, Editing context ) ->
+            case key of
+                Enter ->
+                    if String.isEmpty context.statement then
+                        ( BrowsingDialogue { focus = context.focus }, Cmd.none )
+
+                    else
+                        case applyStatement context.focus context.statement of
+                            Ok newFocus ->
+                                ( BrowsingDialogue { focus = newFocus }, Cmd.none )
+
+                            Err error ->
+                                -- TODO expose errors
+                                ( model, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
 
         --
         -- Auxiliary events
@@ -287,7 +295,7 @@ view model =
                 [ Border.rounded 1
                 , El.padding 30
                 , Font.color (El.rgba 0 0 0 1)
-                , Font.size 32
+                , Font.size 18
                 , Font.family
                     [ Font.external
                         { url = "https://fonts.googleapis.com/css?family=EB+Garamond"
@@ -316,7 +324,11 @@ view model =
         case model of
             ChoosingTopic context ->
                 El.row [ El.width (El.fill |> El.maximum 640), El.centerY, El.centerX ]
-                    [ Input.spellChecked [ El.spacing 12, Input.focusedOnLoad, onEnter StartDialogue ]
+                    [ Input.spellChecked
+                        [ El.spacing 12
+                        , Input.focusedOnLoad
+                        , Font.size 32
+                        ]
                         { onChange = EditTopic
                         , text = context.topic
                         , placeholder = Just (Input.placeholder [] (El.text "What the dialogue is about today?"))
@@ -325,62 +337,59 @@ view model =
                     ]
 
             Editing context ->
-                {- H.div []
-                   [ H.div [] [ renderDialogue context.focus ]
-                   , H.div []
-                       [ H.form [ Evt.onSubmit ProcessStatement ]
-                           [ H.input
-                               [ Attr.id "input-statement"
-                               , Attr.placeholder "Enter a statement..."
-                               , Attr.value context.statement
-                               , Evt.onInput EditStatement
-                               ]
-                               []
-                           ]
-                       ]
-                       ]
-                -}
-                El.none
+                El.column [ El.width El.fill, El.height El.fill ]
+                    [ dialogueBrowser context.focus
+                    , Input.spellChecked [ El.spacing 12, El.width El.fill, Input.focusedOnLoad ]
+                        { onChange = EditStatement
+                        , text = context.statement
+                        , placeholder = Just (Input.placeholder [] (El.text "Enter the statement"))
+                        , label = Input.labelHidden "Statement"
+                        }
+                    ]
 
             BrowsingDialogue context ->
-                dialogueBrowser context.focus
+                El.column [ El.width El.fill, El.height El.fill ]
+                    [ dialogueBrowser context.focus
+                    ]
 
 
 dialogueBrowser : DialogueFocus -> El.Element msg
 dialogueBrowser dialogueFocus =
-    El.column
-        [ El.spacing 20, El.padding 10 ]
-        []
-
-
-annotationToHtml : DialogueNodeAnnotation -> H.Html msg
-annotationToHtml annotation =
-    if annotation.isSelected then
-        H.text (">>>" ++ annotation.title ++ "<<<")
-
-    else
-        H.text annotation.title
-
-
-toListItems : H.Html msg -> List (H.Html msg) -> H.Html msg
-toListItems label children =
-    case children of
-        [] ->
-            H.li [] [ label ]
-
-        _ ->
-            H.li []
-                [ label
-                , H.ul [] children
-                ]
-
-
-renderDialogue : DialogueFocus -> H.Html msg
-renderDialogue focus =
-    Tree.Zipper.root focus
+    Tree.Zipper.root dialogueFocus
         |> Tree.Zipper.toTree
-        |> Tree.restructure annotationToHtml toListItems
-        |> (\root -> H.ul [] [ root ])
+        |> Tree.restructure renderAnnotation renderAnnotationRecursively
+        |> (\root ->
+                El.column
+                    [ El.spacing 20, El.width El.fill, El.height El.fill, El.explain Debug.todo ]
+                    [ root ]
+           )
+
+
+renderAnnotation : DialogueNodeAnnotation -> El.Element msg
+renderAnnotation annotation =
+    let
+        selectedItemAttributes =
+            if annotation.isSelected then
+                [ Font.bold ]
+
+            else
+                []
+
+        calculateAttributes =
+            selectedItemAttributes ++ [ El.padding 0, El.spacing 0, El.alignLeft, El.width El.fill ]
+    in
+    El.el calculateAttributes (El.text annotation.title)
+
+
+renderAnnotationRecursively : El.Element msg -> List (El.Element msg) -> El.Element msg
+renderAnnotationRecursively label children =
+    El.row [ El.padding 0, El.spacing 0, El.alignLeft, El.width El.fill ] <|
+        case children of
+            [] ->
+                [ label ]
+
+            _ ->
+                [ label, El.column [ El.padding 10, El.spacing 10, El.width El.fill ] children ]
 
 
 
